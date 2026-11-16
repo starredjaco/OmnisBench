@@ -6,6 +6,22 @@ import sys
 import tempfile
 from pathlib import Path
 
+# The interpreter answers are graded under. A run records its Python version, and
+# verify switches to that version, because a newer Python can pass code an older one
+# failed (3.14 evaluates annotations lazily, so a missing `from typing import List`
+# no longer raises NameError).
+_interpreter: str = sys.executable
+
+
+def set_interpreter(path: str | None) -> None:
+    """Grade with the Python at ``path``. ``None`` puts back the current interpreter."""
+    global _interpreter
+    _interpreter = path or sys.executable
+
+
+def interpreter() -> str:
+    return _interpreter
+
 
 def run_python(code: str, timeout_s: float) -> tuple[int, str]:
     """Run untrusted Python in a fresh subprocess. Returns (returncode, output).
@@ -18,7 +34,7 @@ def run_python(code: str, timeout_s: float) -> tuple[int, str]:
         script.write_text(code, encoding="utf-8")
         try:
             proc = subprocess.run(
-                [sys.executable, "-I", str(script)],
+                [_interpreter, "-I", str(script)],
                 cwd=tmp,
                 capture_output=True,
                 text=True,
@@ -43,7 +59,7 @@ def run_python_io(code: str, stdin: str, timeout_s: float) -> tuple[int, str, st
         script.write_text(code, encoding="utf-8")
         try:
             proc = subprocess.run(
-                [sys.executable, "-I", str(script)],
+                [_interpreter, "-I", str(script)],
                 cwd=tmp,
                 input=stdin,
                 capture_output=True,

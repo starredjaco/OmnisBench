@@ -83,3 +83,40 @@ def test_verify_catches_tampered_split(tmp_path):
     results_path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
 
     assert cli.cmd_verify(str(run_dir)) != 0
+
+
+def test_run_records_the_python_it_graded_with(tmp_path):
+    import sys
+    run_dir = tmp_path / "run"
+    cli.cmd_run("tests/configs/e2e.yaml", str(run_dir), providers_override=_providers())
+    doc = json.loads((run_dir / "results.json").read_text())
+    assert doc["provenance"]["python"] == "%d.%d.%d" % sys.version_info[:3]
+
+
+def test_verify_fails_clearly_when_the_runs_python_is_missing(tmp_path, capsys):
+    run_dir = tmp_path / "run"
+    cli.cmd_run("tests/configs/e2e.yaml", str(run_dir), providers_override=_providers())
+    doc = json.loads((run_dir / "results.json").read_text())
+    doc["provenance"]["python"] = "2.1.0"
+    (run_dir / "results.json").write_text(json.dumps(doc))
+    assert cli.cmd_verify(str(run_dir)) != 0
+    assert "Python 2.1" in capsys.readouterr().out
+
+
+def test_verify_python_override_wins_over_provenance(tmp_path):
+    import sys
+    run_dir = tmp_path / "run"
+    cli.cmd_run("tests/configs/e2e.yaml", str(run_dir), providers_override=_providers())
+    doc = json.loads((run_dir / "results.json").read_text())
+    doc["provenance"]["python"] = "2.1.0"
+    (run_dir / "results.json").write_text(json.dumps(doc))
+    assert cli.cmd_verify(str(run_dir), python=sys.executable) == 0
+
+
+def test_verify_puts_the_default_interpreter_back(tmp_path):
+    import sys
+    from omnisbench.graders import sandbox
+    run_dir = tmp_path / "run"
+    cli.cmd_run("tests/configs/e2e.yaml", str(run_dir), providers_override=_providers())
+    cli.cmd_verify(str(run_dir), python=sys.executable)
+    assert sandbox.interpreter() == sys.executable

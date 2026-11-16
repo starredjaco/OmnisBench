@@ -55,3 +55,15 @@ def test_humaneval_entry_point_wrong_code_fails():
     g = GRADERS["code_unittest"]
     resp = "```python\ndef add(a, b):\n    return a - b\n```"
     assert g.score(resp, _humaneval_item("add")).passed is False
+
+
+def test_sandbox_runs_code_under_the_chosen_interpreter():
+    import sys
+    from omnisbench.graders import sandbox
+    sandbox.set_interpreter(sys.executable)
+    try:
+        rc, out = sandbox.run_python("import sys; print(sys.executable)", 30)
+        assert rc == 0 and out.strip().lower() == sys.executable.lower()
+    finally:
+        sandbox.set_interpreter(None)
+    assert sandbox.interpreter() == sys.executable

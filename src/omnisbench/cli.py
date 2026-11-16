@@ -5,6 +5,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from .config import build_policies, load_config
 from .cost import CostModel
 from .datasets.loaders import load_dataset_spec
 from .graders import GRADERS
+from .graders import sandbox
 from .policies.baselines import AlwaysModelPolicy
 from .probe import (
     generate_perturbations,
@@ -58,6 +60,31 @@ def _load_items(cfg: dict) -> list[TaskItem]:
     return items
 
 
+def _python_version() -> str:
+    """The Python the answers were graded under (the sandbox's interpreter)."""
+    return "%d.%d.%d" % sys.version_info[:3]
+
+
+def _find_python(version: str) -> str | None:
+    """Path to an installed Python matching ``version``'s major.minor, or None."""
+    want = ".".join(version.split(".")[:2])
+    if "%d.%d" % sys.version_info[:2] == want:
+        return sys.executable
+    for cmd in (["py", f"-{want}"], [f"python{want}"]):
+        if shutil.which(cmd[0]) is None:
+            continue
+        try:
+            proc = subprocess.run(
+                cmd + ["-c", "import sys; print(sys.executable)"],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    return None
+
+
 def cmd_run(cfg_path: str, run_dir: str, providers_override: ProviderRegistry | None = None) -> int:
     cfg = load_config(cfg_path)
     cost = CostModel(cfg["pricing"])
@@ -84,6 +111,7 @@ def cmd_run(cfg_path: str, run_dir: str, providers_override: ProviderRegistry | 
         "max_tokens": int(cfg.get("max_tokens", 4096)),
         "training_cutoff": cutoff,
         "unpriced_models": unpriced_models,
+        "python": _python_version(),
     }
     doc = build_results_doc(
         aggs, results, provenance,
@@ -138,6 +166,7 @@ def cmd_probe(cfg_path: str, run_dir: str, providers_override: ProviderRegistry 
         "perturbation_validate": validate,
         "perturbation_validation": validation,
         "unpriced_models": unpriced_models,
+        "python": _python_version(),
     }
     doc = build_results_doc(aggs, results, provenance, frontier_model=frontier, perturbation=gaps)
     (out / "results.json").write_text(json.dumps(doc, indent=2), encoding="utf-8")
@@ -160,7 +189,32 @@ def cmd_report(run_dir: str) -> int:
     return 0
 
 
-def cmd_verify(run_dir: str) -> int:
+def cmd_verify(run_dir: str, python: str | None = None) -> int:
+    """Re-grade a run offline under the Python it was graded with.
+
+    ``python`` is a path to an interpreter and overrides the version in the run's
+    provenance. Older runs that don't record a version grade under this interpreter.
+    """
+    doc = json.loads((Path(run_dir) / "results.json").read_text(encoding="utf-8"))
+    recorded = doc.get("provenance", {}).get("python")
+    exe = python
+    if exe is None and recorded:
+        exe = _find_python(recorded)
+        if exe is None:
+            want = ".".join(str(recorded).split(".")[:2])
+            print(f"VERIFY FAILED: this run was graded on Python {want}, which isn't installed here. "
+                  f"Install it, or pass --python <path to a Python {want}>.")
+            return 1
+    if exe is not None:
+        print(f"Grading with {exe}")
+    sandbox.set_interpreter(exe)
+    try:
+        return _verify(run_dir)
+    finally:
+        sandbox.set_interpreter(None)
+
+
+def _verify(run_dir: str) -> int:
     """Re-run the graders and re-price from the data inlined in results.json.
 
     Genuine offline re-grading: no API/network calls. Re-derives both quality
@@ -290,6 +344,7 @@ def main(argv=None) -> int:
     rep.add_argument("--run", required=True)
     v = sub.add_parser("verify")
     v.add_argument("--run", required=True)
+    v.add_argument("--python", help="interpreter to grade with (default: the run's recorded version)")
     args = parser.parse_args(argv)
     if args.cmd == "run":
         return cmd_run(args.config, args.run)
@@ -298,7 +353,7 @@ def main(argv=None) -> int:
     if args.cmd == "report":
         return cmd_report(args.run)
     if args.cmd == "verify":
-        return cmd_verify(args.run)
+        return cmd_verify(args.run, python=args.python)
     return 2
 
 

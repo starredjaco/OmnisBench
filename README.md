@@ -80,15 +80,24 @@ problems are tagged `recent_pre_cutoff`: recent, but the models could have seen 
 | oracle | 96.0% | $4.25 | 98.7% | $1.54 |
 | always_sonnet55 | 96.0% | $29.39 | 98.7% | $11.43 |
 | always_terra | 94.0% | $23.04 | 92.7% | $9.03 |
-| always_big (Opus 5.5) | 92.0% | $44.24 | 97.3% | $18.47 |
+| always_big (Opus 5.5) | 94.0% | $44.24 | 98.0% | $18.47 |
 | always_cheap (Haiku 5.5) | 88.0% | $2.91 | 95.3% | $1.09 |
 | random | 88.0% | $14.54 | 92.7% | $6.47 |
 | always_luna | 84.0% | $2.79 | 90.0% | $1.11 |
 
-Haiku 5.5 gets within four points of Opus 5.5 on the newer problems for about a fifteenth of the
-price. But four points is two problems out of fifty, so don't read the order of the top four as
+Haiku 5.5 gets within six points of Opus 5.5 on the newer problems for about a fifteenth of the
+price. But six points is three problems out of fifty, so don't read the order of the top four as
 settled. The run cost $6.17, and `omnisbench verify --run runs/fresh-2026-10-19` re-grades it offline
-(it passes with networking switched off). A genuinely fresh coding set for this generation needs
+(it passes with networking switched off, and it grades under the Python the run recorded, 3.12 here).
+
+**Correction, 16 November 2026.** Opus 5.5's answer to `arc196_b` was stored as a fail, and that
+doesn't reproduce: it passes every test in under a second against the 8 second limit. The run didn't
+keep the grader's reason, so I can't say why it failed on the day (a cold numpy and scipy import
+timing out is the best guess, not a proven one). It's now a pass, which moves Opus 5.5 from 92.0% to
+94.0% on LiveCodeBench and from 97.3% to 98.0% overall. The change is recorded in `results.json`
+under `corrections`. While chasing it I also found that re-grading on Python 3.14 passes 9 answers
+that 3.12 fails (3.14 evaluates annotations lazily, so a missing `from typing import List` stops
+mattering). Runs now record their Python version and `verify` grades with it. A genuinely fresh coding set for this generation needs
 problems from after February 2026, and LiveCodeBench hasn't published any.
 
 Reproduce (needs `OPENAI_API_KEY` + `ANTHROPIC_API_KEY`, `pip install datasets` for LiveCodeBench,

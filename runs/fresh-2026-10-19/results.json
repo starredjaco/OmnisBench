@@ -4,7 +4,8 @@
     "run_date": "2026-10-19",
     "max_tokens": 32768,
     "training_cutoff": "2026-02-16",
-    "unpriced_models": []
+    "unpriced_models": [],
+    "python": "3.12"
   },
   "frontier_model": "anthropic/claude-opus-5-5",
   "contamination_counts": {
@@ -88,10 +89,10 @@
       "policy": "always_big",
       "kind": "transparent",
       "n": 150,
-      "quality": 0.9733333333333334,
+      "quality": 0.98,
       "total_cost_usd": 2.770504,
       "avg_cost_usd": 0.018470026666666667,
-      "quality_per_usd": 0.35131995237448976,
+      "quality_per_usd": 0.35372625341815067,
       "escape_rate": 1.0
     }
   ],
@@ -161,10 +162,10 @@
         "policy": "always_big",
         "kind": "transparent",
         "n": 50,
-        "quality": 0.92,
+        "quality": 0.94,
         "total_cost_usd": 2.2121,
         "avg_cost_usd": 0.044242,
-        "quality_per_usd": 0.41589439898738756,
+        "quality_per_usd": 0.42493558157406985,
         "escape_rate": 1.0
       }
     ],
@@ -2038,7 +2039,7 @@
       },
       "response_text": "Each tile's segment can be described by which of its four edge midpoints it touches. So I put a 0/1 variable on every edge of the torus grid and turn the tile rules into XOR equations.\n\n**Variables.** Let `x[i][j]` = 1 if a segment touches the right edge of cell (i,j), which is the same edge as the left edge of (i,(j+1) mod W). Let `y[i][j]` = 1 if a segment touches the bottom edge of (i,j). For cell (i,j):\n- left = `x[i][j-1]`, right = `x[i][j]`\n- top = `y[i-1][j]`, bottom = `y[i][j]`\n\n**Type A** (adjacent edges) means exactly one horizontal and exactly one vertical endpoint:\n- `left \u2295 right = 1` and `top \u2295 bottom = 1`.\n- Each of the 4 such edge choices is exactly one rotation, so A adds no further freedom.\n\n**Type B** (opposite edges) means:\n- `left = right` and `top = bottom`.\n- `right \u2260 bottom`, i.e. `x[i][j] \u2295 y[i][j] = 1`.\n- Each valid choice is exactly one rotation.\n\nLet `a[i][j] = 1` if the cell is A, else 0. Then:\n- **Rows:** `x[i][j-1] \u2295 x[i][j] = a[i][j]`. Going around the row, this is consistent only if row i contains an even number of A's. If so, `x[i][j] = r_i \u2295 P[i][j]`, where `r_i` is one free bit and `P[i][j]` is the prefix XOR of `a` along the row.\n- **Columns:** likewise, every column needs an even number of A's. Then `y[i][j] = c_j \u2295 Q[i][j]`, with one free bit `c_j` and `Q` the prefix XOR down the column.\n- **B cells** add `r_i \u2295 c_j = 1 \u2295 P[i][j] \u2295 Q[i][j]`.\n\n**Counting.** These are parity constraints on a bipartite graph with H+W nodes (rows and columns) and one edge per B cell.\n- If the constraints are consistent, the answer is 2^(number of connected components).\n- Otherwise the answer is 0.\n\n**Implementation.**\n- Small cases use a parity union-find in pure Python, which avoids numpy overhead when T is large.\n- Large cases use numpy for the prefix XORs and scipy for components on a doubled graph. Node (u,p) means \"u has value p\". An edge with weight w joins (u,0)\u2013(v,w) and (u,1)\u2013(v,1\u2295w).\n- The system is consistent iff no (u,0),(u,1) share a component. The real component count is then half the doubled count.\n\n```python\nimport sys\ndef main():\n    import numpy as np\n    from scipy.sparse import csr_matrix\n    from scipy.sparse.csgraph import connected_components\n    data=sys.stdin.buffer.read().split()\n    MOD=998244353\n    t=int(data[0]);pos=1\n    out=[]\n    for _ in range(t):\n        H=int(data[pos]);W=int(data[pos+1]);pos+=2\n        rows=data[pos:pos+H];pos+=H\n        if H*W<=400:\n            # pure python\n            ok=True\n            colpar=[0]*W\n            N=H+W\n            par=list(range(N));pw=[0]*N\n            def find(x):\n                # returns root, parity to root\n                p=0\n                path=[]\n                while par[x]!=x:\n                    path.append(x);x=par[x]\n                root=x\n                # compress\n                acc=0\n                for nd in reversed(path):\n                    acc^=pw[nd]\n                    pw[nd]=acc\n                    par[nd]=root\n                return root\n            comps=N\n            Q=[0]*W\n            for i in range(H):\n                s=rows[i]\n                P=0\n                for j in range(W):\n                    a=1 if s[j]==65 else 0\n                    P^=a\n                    Q[j]^=a\n                    if not a:\n                        w=1^P^Q[j]\n                        u=i;v=H+j\n                        ru=find(u);pu=pw[u] if par[u]!=u else 0\n                        if ru==u: pu=0\n                        rv=find(v);pv=pw[v] if v!=rv else 0\n                        if ru==rv:\n                            if pu^pv!=w: ok=False\n                        else:\n                            par[ru]=rv;pw[ru]=pu^pv^w;comps-=1\n                if P: ok=False\n            for j in range(W):\n                if Q[j]: ok=False\n            out.append(pow(2,comps,MOD) if ok else 0)\n            continue\n        a=(np.frombuffer(b''.join(rows),dtype=np.uint8).reshape(H,W)==65).astype(np.int64)\n        P=np.cumsum(a,axis=1)&1\n        Q=np.cumsum(a,axis=0)&1\n        if P[:,-1].any() or Q[-1,:].any():\n            out.append(0);continue\n        N=H+W\n        bi,bj=np.nonzero(a==0)\n        w=(1^P[bi,bj]^Q[bi,bj]).astype(np.int64)\n        u=bi.astype(np.int64);v=(bj+H).astype(np.int64)\n        src=np.concatenate([u,u+N]);dst=np.concatenate([v+w*N,v+(1-w)*N])\n        m=csr_matrix((np.ones(len(src),dtype=np.int8),(src,dst)),shape=(2*N,2*N))\n        nc,lab=connected_components(m,directed=False)\n        if (lab[:N]==lab[N:]).any():\n            out.append(0)\n        else:\n            out.append(pow(2,nc//2,MOD))\n    sys.stdout.write(\"\\n\".join(map(str,out))+\"\\n\")\nmain()\n```",
       "chosen_model": "anthropic/claude-opus-5-5",
-      "passed": false,
+      "passed": true,
       "cost_usd": 0.079064,
       "input_tokens": 1276,
       "output_tokens": 3698,
@@ -23215,6 +23216,14 @@
       "input_tokens": 1046,
       "output_tokens": 2496,
       "latency_ms": 11681.751851981971
+    }
+  ],
+  "corrections": [
+    {
+      "date": "2026-11-16",
+      "item": "always_big/arc196_b",
+      "change": "passed false -> true",
+      "why": "Stored as a fail on 2026-10-19, but the answer passes every test case on re-grading (0.6 to 0.8 s against the 8 s limit, under Python 3.12 and 3.14). The run didn't keep the grader's reason, so the original failure can't be explained. The most likely cause is a cold import of numpy and scipy timing out while the run was busy, but that wasn't proved."
     }
   ]
 }
